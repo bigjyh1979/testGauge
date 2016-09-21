@@ -20,7 +20,7 @@ Discharge_Current_Threshold = -200       # mA
 Charge_Current_Threshold = 100          # mA
 Charge_Update_Current_mA = 200          # mA
 Charge_Update_Time = 60                 # sec
-Static_Update_Time = 5400               # sec
+Static_Update_Time = 100               # sec
 
 
 #--- Tracking & Initial Variables -------------------------------------
@@ -32,12 +32,12 @@ Used_Capacity_mAh = Full_Charge_Capacity_mAh - RM_mAh ### The capacity has been 
 
 Total_Vol = 34000
 Static_Vol = 34000                              # mV
-Discharged_Capacity_calculation = 100           ### Discharged capacity by count minute
-Charged_Capacity_calculation = 400              ### Charged capacity by count minute
+Discharged_Capacity_calculation = 0           ### Discharged capacity by count minute
+Charged_Capacity_calculation = 0              ### Charged capacity by count minute
 Extra_Dsg_Cap = 0                               ### Extra discharged capacity
 
 Static_OCV_Percentage = 0                       # %
-Rest_Time = 5400                                # sec
+Rest_Time = 0                                # sec
 Charge_Time = 0                                 # sec
 Charge_Tape_Time = 0                            # sec
 Discharge_Time = 0                              # sec
@@ -69,21 +69,17 @@ def Initial_Static_Capacity_Calculation(Static_OCV_Percentage):
     RM_mAh = (Static_OCV_Percentage / 100.0 * Full_Charge_Capacity_mAh)
     RM_percentage = RM_mAh * 100.0 / Full_Charge_Capacity_mAh
     Used_Capacity_mAh = Full_Charge_Capacity_mAh - RM_mAh
-    Discharged_Capacity_calculation = 100
-    Charged_Capacity_calculation = 200
-
-
-print ('Current I = %d mA, V = %d mV, RM_Percent = %5.1f' % (Current_mA, Static_Vol, Static_OCV_Percentage))
+    Discharged_Capacity_calculation = 0
+    Charged_Capacity_calculation = 0
 
 ### Initialization
 Get_Static_OCV_Percentage(Static_Vol, Cell_OCV_Table, Cell_Series)
 Initial_Static_Capacity_Calculation(Static_OCV_Percentage)
-print ('Initialization : RM_mAh:%5d  RM_Percent:%5.1f  UC:%5d  DCC:%5d  CCC:%5d  FCC:%5d  Extra_Cap:%5d' % (RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap))
 
 #print 'RM_mAh:%s UC:%s DCC:%s CCC:%d RM%:%s FCC:%s' % (RM_mAh, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, RM_percentage, Full_Charge_Capacity_mAh)
 
-def Check_Current_Status(Current_mA):
-    global CurrentInCHG, CurrentInDSG, CurrentInSTATIC
+def Check_Current_Status():
+    global Current_mA, CurrentInCHG, CurrentInDSG, CurrentInSTATIC
     if(Current_mA >= Charge_Current_Threshold):
         CurrentInCHG = True
         CurrentInDSG = False
@@ -101,8 +97,9 @@ def Check_Current_Status(Current_mA):
         print ('Rest')
 
 def Calculation_Charging():
-    global Rest_Time, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_Update_Flag
+    global Current_mA, Rest_Time, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_Update_Flag
     Rest_Time = 0
+    Charged_Capacity_calculation += abs(Current_mA * 1000 * 10/3600)
     Used_Capacity_mAh += Discharged_Capacity_calculation         ## UC update by discharge capacity
     Used_Capacity_mAh -= Charged_Capacity_calculation            ## UC update by charge capacity
     RM_mAh = Full_Charge_Capacity_mAh - Used_Capacity_mAh
@@ -125,11 +122,11 @@ def Calculation_Charging():
             RM_percentage = 100
             Charge_FCC_Update_Flag = True
     Extra_Dsg_Cap = 0                                   ## Only update during discharging and rest
-    print ('Charging : RM_mAh:%5d  RM_Percent:%5.1f  UC:%5d  DCC:%5d  CCC:%5d  FCC:%5d  Extra_Cap:%5d' % (RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap))
 
 def Calculation_Discharging():
-    global Rest_Time, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_Update_Flag
+    global Current_mA, Rest_Time, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_Update_Flag
     Rest_Time = 0
+    Discharged_Capacity_calculation += abs(Current_mA * 1000 * 10/3600)
     Used_Capacity_mAh += Discharged_Capacity_calculation         ## UC update by discharge capacity
     Used_Capacity_mAh -= Charged_Capacity_calculation            ## UC update by charge capacity
     RM_mAh = Full_Charge_Capacity_mAh - Used_Capacity_mAh
@@ -147,11 +144,11 @@ def Calculation_Discharging():
     Discharged_Capacity_calculation = 0
     if(RM_percentage <= 70 and Charge_FCC_Update_Flag == True):
         Charge_FCC_Update_Flag = False
-    print ('Discharging : RM_mAh:%5d  RM_Percent:%5.1f  UC:%5d  DCC:%5d  CCC:%5d  FCC:%5d  Extra_Cap:%5d' % (RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap))
 
 def Calculation_Rest():
     global Rest_Time, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap
-    Rest_Time += 1                                                  ## count rest time
+    Rest_Time += 10                                                  ## count rest time
+    Static_Vol = Total_Vol
     ## Static Update
     if(Rest_Time >= Static_Update_Time):
         Get_Static_OCV_Percentage(Static_Vol, Cell_OCV_Table, Cell_Series)
@@ -181,24 +178,57 @@ def Calculation_Rest():
             RM_percentage = RM_mAh * 100.0 / Full_Charge_Capacity_mAh 
         Charged_Capacity_calculation = 0
         Discharged_Capacity_calculation = 0
-    print ('Rest : RM_mAh:%5d  RM_Percent:%5.1f  UC:%5d  DCC:%5d  CCC:%5d  FCC:%5d  Extra_Cap:%5d' % (RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap))
 
-
+import csv
+capacity = 0
+Wh = 0
 
 ###### Main Gauge Flow ######
+## Reading Data
+with open ('rest+discharge.txt', 'r', encoding='utf-8') as fin:
+    with open ('newtestCSV.txt', 'w', encoding='utf-8') as fout :
+        csvreader = csv.reader(fin, delimiter=',')
+        csvwriter = csv.writer(fout, delimiter=',')
+        header = next(csvreader)
+        header.append('mAh')                        ## V,I,P,R,T,mAH,WH,mAh
+        header.append('Wh')                         ## V,I,P,R,T,mAH,WH,mAh,Wh
+        header.append('Rest_Time')                  ## V,I,P,R,T,mAH,WH,mAh,Wh
+        header.append('RM_mAh')                     ## V,I,P,R,T,mAH,WH,mAh,Wh
+        header.append('RM_%')                       ## V,I,P,R,T,mAH,WH,mAh,Wh
+        header.append('UC')                         ## V,I,P,R,T,mAH,WH,mAh,Wh
+        header.append('FCC')                        ## V,I,P,R,T,mAH,WH,mAh,Wh
+        csvwriter.writerow(header)
+        for row in csvreader:
+            row[0]= round(float(row[0]), 3)         ## Voltage
+            row[1]= round(float(row[1]), 3)         ## Current
+            row[2]= round(float(row[2]), 3)         ## I,P,R,T,mAH,WH
+            row[3]= round(float(row[3]), 3)         ## Resistance
+            row[4]= round(float(row[4]), 3)         ## Temperature
+            row[5]= round(float(row[5]), 3)         ## mAh - LM
+            row[6]= round(float(row[6]), 3)         ## Wh - LM
+            capacity += row[1] * 1000 * 10/3600     ## mAh
+            Wh += row[1] * row[0] * 10/3600         ## Wh
+            Total_Vol = row[0] * 1000
+            Current_mA = row[1] * -1000             ## Current < 0 (Discharge)
+            row.append(round(capacity, 3))          ## Extend Row
+            row.append(round(Wh, 3))                ## Extend Row
 ## Current Status Check
-Check_Current_Status(Current_mA)
-
-
+            Check_Current_Status()
 #### Capacity Calculaton
-## Charging
-if(CurrentInCHG == True):
-    Calculation_Charging()
+## Charging                        
+            if(CurrentInCHG == True):
+                Calculation_Charging()
 ## Discharging
-elif(CurrentInDSG == True):
-    Calculation_Discharging()
+            elif(CurrentInDSG == True):
+                Calculation_Discharging()
 ## Rest
-elif(CurrentInSTATIC == True):
-    Calculation_Rest()
+            elif(CurrentInSTATIC == True):
+                Calculation_Rest()
+            row.append(Rest_Time)
+            row.append(RM_mAh)
+            row.append(RM_percentage)
+            row.append(Used_Capacity_mAh)            
+            row.append(Full_Charge_Capacity_mAh)
+            csvwriter.writerow(row)
 
 
