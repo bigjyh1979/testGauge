@@ -127,9 +127,10 @@ def Calculation_Charging():
     Extra_Dsg_Cap = 0                                   ## Only update during discharging and rest
 
 def Calculation_Discharging():
-    global Current_mA, Rest_Time, Rest_Time_for_Update, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_Update_Flag
+    global Current_mA, Rest_Time, Charge_Tape_Time, Rest_Time_for_Update, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_Update_Flag
     Rest_Time = 0
     Rest_Time_for_Update = 0
+    Charge_Tape_Time = 0
     Discharged_Capacity_calculation += abs(Current_mA * 10/3600)
     Used_Capacity_mAh += Discharged_Capacity_calculation         ## UC update by discharge capacity
     Used_Capacity_mAh -= Charged_Capacity_calculation            ## UC update by charge capacity
@@ -150,8 +151,9 @@ def Calculation_Discharging():
         Charge_FCC_Update_Flag = False
 
 def Calculation_Rest():
-    global Rest_Time, Rest_Time_for_Update, Total_Vol, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Initialized_Flag
-    Initialization()                                                ## Need to be adjusted if it's not started in rest
+    global Rest_Time, Rest_Time_for_Update, Charge_Tape_Time, Total_Vol, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Initialized_Flag
+    Initialization()
+    Charge_Tape_Time = 0                                                ## Need to be adjusted if it's not started in rest
     Rest_Time += 10     
     Rest_Time_for_Update += 10                                             ## count rest time
     ## Static Update
@@ -161,7 +163,7 @@ def Calculation_Rest():
             Used_Capacity_mAh += Extra_Dsg_Cap
             Full_Charge_Capacity_mAh = ((Used_Capacity_mAh*100)/(100-RM_percentage))
             RM_mAh = Full_Charge_Capacity_mAh - Used_Capacity_mAh
-            RM_percentage = RM_mAh * 100.0 / Full_Charge_Capacity_mAh
+            RM_percentage = RM_mAh * 100.0 / (Full_Charge_Capacity_mAh +1)
             Charged_Capacity_calculation = 0
             Discharged_Capacity_calculation = 0
             Extra_Dsg_Cap = 0
@@ -194,6 +196,10 @@ ws = wb.get_sheet_by_name ('sheet1')
 
 #### Input Data to Algorithm
 row_index = 1
+avg_Vol = 0
+vol_List = [0] * 10
+i = 1
+
 for row in ws.rows:
     if row_index == 1 :
         ws.cell(row=row_index, column=len(row)+1).value='C_mAh'
@@ -218,6 +224,19 @@ for row in ws.rows:
     Current_mA = row[1].value * 1000
     C_mAh += Current_mA * -10 /3600
     C_Wh += Current_mA/-1000 * Total_Vol/1000 * 10 /3600
+## Average Voltage
+    if i >= 10 :
+        i = 10
+    j = i-1
+    while j > 0 :
+        vol_List[j] = vol_List[j-1]
+        j -= 1
+    vol_List[0] = row[5]
+    avg_Vol = sum(vol_List)
+    row.append(avg_Vol)
+    row.append(avg_Vol/i)
+    i+=1
+    
 #### Current Status Check
     Check_Current_Status()
 #### Capacity Calculaton
