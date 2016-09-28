@@ -49,6 +49,7 @@ CurrentInDSG = False
 CurrentInSTATIC = True
 Charge_FCC_Update_Flag = False                 # False is available to update; True means just updated now.
 Initialized_Flag = True                        # True means it's in initialized; False means already initialized
+Vol_is_Dynamic = True
 
 ### To get static SOC%
 def Get_Static_OCV_Percentage():
@@ -157,8 +158,9 @@ def Calculation_Rest():
     Rest_Time += 10     
     Rest_Time_for_Update += 10                                             ## count rest time
     ## Static Update
-    if(Rest_Time_for_Update >= Static_Update_Time):
+    if(Rest_Time_for_Update >= Static_Update_Time and Vol_is_Dynamic == False):
         Get_Static_OCV_Percentage()
+        Rest_Time_for_Update = 0
         if(RM_percentage < 30):
             Used_Capacity_mAh += Extra_Dsg_Cap
             Full_Charge_Capacity_mAh = ((Used_Capacity_mAh*100)/(100-RM_percentage))
@@ -167,7 +169,6 @@ def Calculation_Rest():
             Charged_Capacity_calculation = 0
             Discharged_Capacity_calculation = 0
             Extra_Dsg_Cap = 0
-            Rest_Time_for_Update = 0
     elif(Rest_Time_for_Update < Static_Update_Time):   
         Used_Capacity_mAh -= Charged_Capacity_calculation            ## UC update by charge capacity
         Used_Capacity_mAh += Discharged_Capacity_calculation         ## UC update by discharge capacity
@@ -185,6 +186,17 @@ def Calculation_Rest():
         Charged_Capacity_calculation = 0
         Discharged_Capacity_calculation = 0
 
+def AverageVol():
+    global vol_List, vol_List_index, j, avg_Vol
+    if vol_List_index >= 10 :
+        vol_List_index = 10
+    j = vol_List_index-1
+    while j > 0 :
+        vol_List[j] = vol_List[j-1]
+        j -= 1
+    vol_List[0] = Total_Vol
+    avg_Vol = sum(vol_List)/vol_List_index
+    vol_List_index+=1
 
 ###### Main Gauge Flow ######
 #### Reading Data
@@ -198,26 +210,28 @@ ws = wb.get_sheet_by_name ('sheet1')
 row_index = 1
 avg_Vol = 0
 vol_List = [0] * 10
-i = 1
+vol_List_index = 1
 
 for row in ws.rows:
     if row_index == 1 :
         ws.cell(row=row_index, column=len(row)+1).value='C_mAh'
         ws.cell(row=row_index, column=len(row)+2).value='C_Wh'
         ws.cell(row=row_index, column=len(row)+3).value='mV'
-        ws.cell(row=row_index, column=len(row)+4).value='mA'
-        ws.cell(row=row_index, column=len(row)+5).value='Current_Status'
-        ws.cell(row=row_index, column=len(row)+6).value= 'Rest_Time'
-        ws.cell(row=row_index, column=len(row)+7).value= 'Rest_Time_for_Update'
-        ws.cell(row=row_index, column=len(row)+8).value= 'Charge_Tape_Time'
-        ws.cell(row=row_index, column=len(row)+9).value= 'Charged_Capacity_calculation'
-        ws.cell(row=row_index, column=len(row)+10).value= 'Discharged_Capacity_calculation'
-        ws.cell(row=row_index, column=len(row)+11).value= 'Extra_Dsg_Cap'
-        ws.cell(row=row_index, column=len(row)+12).value= 'Full_Charge_Capacity_mAh'
-        ws.cell(row=row_index, column=len(row)+13).value= 'RM_mAh'
-        ws.cell(row=row_index, column=len(row)+14).value= 'RM_percentage'
-        ws.cell(row=row_index, column=len(row)+15).value= 'Used_Capacity_mAh'
-        ws.cell(row=row_index, column=len(row)+16).value= 'Charge_FCC_Update_Flag'
+        ws.cell(row=row_index, column=len(row)+4).value='mV_avg'
+        ws.cell(row=row_index, column=len(row)+5).value='mA'
+        ws.cell(row=row_index, column=len(row)+6).value='Current_Status'
+        ws.cell(row=row_index, column=len(row)+7).value= 'Rest_Time'
+        ws.cell(row=row_index, column=len(row)+8).value= 'Rest_Time_for_Update'
+        ws.cell(row=row_index, column=len(row)+9).value= 'Charge_Tape_Time'
+        ws.cell(row=row_index, column=len(row)+10).value= 'Charged_Capacity_calculation'
+        ws.cell(row=row_index, column=len(row)+11).value= 'Discharged_Capacity_calculation'
+        ws.cell(row=row_index, column=len(row)+12).value= 'Extra_Dsg_Cap'
+        ws.cell(row=row_index, column=len(row)+13).value= 'Full_Charge_Capacity_mAh'
+        ws.cell(row=row_index, column=len(row)+14).value= 'RM_mAh'
+        ws.cell(row=row_index, column=len(row)+15).value= 'RM_percentage'
+        ws.cell(row=row_index, column=len(row)+16).value= 'Used_Capacity_mAh'
+        ws.cell(row=row_index, column=len(row)+17).value= 'Charge_FCC_Update_Flag'
+        ws.cell(row=row_index, column=len(row)+18).value= 'Vol_is_Dynamic'
         row_index += 1
         continue
     Total_Vol = row[0].value * 1000
@@ -225,18 +239,11 @@ for row in ws.rows:
     C_mAh += Current_mA * -10 /3600
     C_Wh += Current_mA/-1000 * Total_Vol/1000 * 10 /3600
 ## Average Voltage
-    if i >= 10 :
-        i = 10
-    j = i-1
-    while j > 0 :
-        vol_List[j] = vol_List[j-1]
-        j -= 1
-    vol_List[0] = row[5]
-    avg_Vol = sum(vol_List)
-    row.append(avg_Vol)
-    row.append(avg_Vol/i)
-    i+=1
-    
+    AverageVol()
+    if(abs(Total_Vol-avg_Vol) <= 50):
+        Vol_is_Dynamic = False
+    else:
+        Vol_is_Dynamic = True
 #### Current Status Check
     Check_Current_Status()
 #### Capacity Calculaton
@@ -252,20 +259,21 @@ for row in ws.rows:
     ws.cell(row=row_index, column=len(row)+1).value = C_mAh
     ws.cell(row=row_index, column=len(row)+2).value = C_Wh    
     ws.cell(row=row_index, column=len(row)+3).value = Total_Vol
-    ws.cell(row=row_index, column=len(row)+4).value = Current_mA
-    ws.cell(row=row_index, column=len(row)+5).value = Current_Status
-    ws.cell(row=row_index, column=len(row)+6).value= Rest_Time
-    ws.cell(row=row_index, column=len(row)+7).value= Rest_Time_for_Update
-    ws.cell(row=row_index, column=len(row)+8).value= Charge_Tape_Time
-    ws.cell(row=row_index, column=len(row)+9).value= Charged_Capacity_calculation
-    ws.cell(row=row_index, column=len(row)+10).value= Discharged_Capacity_calculation
-    ws.cell(row=row_index, column=len(row)+11).value= Extra_Dsg_Cap
-    ws.cell(row=row_index, column=len(row)+12).value= Full_Charge_Capacity_mAh
-    ws.cell(row=row_index, column=len(row)+13).value= RM_mAh
-    ws.cell(row=row_index, column=len(row)+14).value= RM_percentage
-    ws.cell(row=row_index, column=len(row)+15).value= Used_Capacity_mAh
-    ws.cell(row=row_index, column=len(row)+16).value= Charge_FCC_Update_Flag
-
+    ws.cell(row=row_index, column=len(row)+4).value = avg_Vol
+    ws.cell(row=row_index, column=len(row)+5).value = Current_mA
+    ws.cell(row=row_index, column=len(row)+6).value = Current_Status
+    ws.cell(row=row_index, column=len(row)+7).value= Rest_Time
+    ws.cell(row=row_index, column=len(row)+8).value= Rest_Time_for_Update
+    ws.cell(row=row_index, column=len(row)+9).value= Charge_Tape_Time
+    ws.cell(row=row_index, column=len(row)+10).value= Charged_Capacity_calculation
+    ws.cell(row=row_index, column=len(row)+11).value= Discharged_Capacity_calculation
+    ws.cell(row=row_index, column=len(row)+12).value= Extra_Dsg_Cap
+    ws.cell(row=row_index, column=len(row)+13).value= Full_Charge_Capacity_mAh
+    ws.cell(row=row_index, column=len(row)+14).value= RM_mAh
+    ws.cell(row=row_index, column=len(row)+15).value= RM_percentage
+    ws.cell(row=row_index, column=len(row)+16).value= Used_Capacity_mAh
+    ws.cell(row=row_index, column=len(row)+17).value= Charge_FCC_Update_Flag
+    ws.cell(row=row_index, column=len(row)+18).value= Vol_is_Dynamic
 
     row_index += 1
 
