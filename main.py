@@ -23,12 +23,12 @@ Discharge_Current_Threshold = -190       # mA
 Charge_Current_Threshold = 100          # mA
 Charge_Update_Current_mA = 200          # mA
 Charge_Update_Time = 100                 # sec
-Static_Update_Time = 80               # sec
-Long_Static_Update_Time = 3600        # sec
+Static_Update_Time = 600               # sec
+Long_Static_Update_Time = 1500        # sec
 
 #--- Tracking & Initial Variables -------------------------------------
 
-Full_Charge_Capacity_mAh = 10400                # mAh
+Full_Charge_Capacity_mAh = Cell_Parallel * Cell_Capacity                # mAh
 
 #RM_percentage = (RM_mAh * 100.0 / Full_Charge_Capacity_mAh)
 #Used_Capacity_mAh = Full_Charge_Capacity_mAh - RM_mAh ### The capacity has been used.
@@ -37,7 +37,9 @@ Discharged_Capacity_calculation = 0           ### Discharged capacity by count m
 Charged_Capacity_calculation = 0              ### Charged capacity by count minute
 Extra_Dsg_Cap = 0                               ### Extra discharged capacity
 
+Time_Interval = 0
 Rest_Time = 0                                    # sec
+Rest_Time_Last = 0
 Rest_Time_for_Update = 0                        # sec
 Charge_Time = 0                                 # sec
 Charge_Tape_Time = 0                            # sec
@@ -47,7 +49,7 @@ Discharge_Time = 0                              # sec
 CurrentInCHG = False
 CurrentInDSG = False
 CurrentInSTATIC = True
-Charge_FCC_Update_Flag = False                 # False is available to update; True means just updated now.
+Charge_FCC_is_Updated = False                 # False is available to update; True means just updated now.
 Initialized_Flag = True                        # True means it's in initialized; False means already initialized
 Vol_is_Dynamic = True
 
@@ -73,12 +75,13 @@ def Normal_Capacity_Calculation():
     Charged_Capacity_calculation = 0
 
 def Initialization():
-    global Rest_Time_for_Update, Initialized_Flag
-    if(Rest_Time_for_Update >= Long_Static_Update_Time or Initialized_Flag == True):
+    global Rest_Time, Rest_Time_for_Update, Initialized_Flag
+    if((Rest_Time >= Long_Static_Update_Time and Vol_is_Dynamic == False) or Initialized_Flag == True):
         Get_Static_OCV_Percentage()
         Normal_Capacity_Calculation()
         Initialized_Flag = False
         Rest_Time_for_Update = 0
+        Rest_Time = 0
 
 def Check_Current_Status():
     global Current_mA, CurrentInCHG, CurrentInDSG, CurrentInSTATIC, Current_Status
@@ -99,10 +102,10 @@ def Check_Current_Status():
         Current_Status = 'Rest'
 
 def Calculation_Charging():
-    global Current_mA, Charge_Tape_Time, Rest_Time, Rest_Time_for_Update, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_Update_Flag
+    global Current_mA, Charge_Tape_Time, Time_Interval, Rest_Time, Rest_Time_for_Update, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_is_Updated
     Rest_Time = 0
     Rest_Time_for_Update = 0
-    Charged_Capacity_calculation += abs(Current_mA * 10/3600)
+    Charged_Capacity_calculation += abs(Current_mA * Time_Interval/3600)
     Used_Capacity_mAh += Discharged_Capacity_calculation         ## UC update by discharge capacity
     Used_Capacity_mAh -= Charged_Capacity_calculation            ## UC update by charge capacity
     RM_mAh = Full_Charge_Capacity_mAh - Used_Capacity_mAh
@@ -118,21 +121,21 @@ def Calculation_Charging():
     Charged_Capacity_calculation = 0
     Discharged_Capacity_calculation = 0
     if(Current_mA <= Charge_Update_Current_mA):        ## FCC Charge Update Criteria
-        Charge_Tape_Time += 10
-        if(Charge_Tape_Time >= Charge_Update_Time and RM_mAh <= Full_Charge_Capacity_mAh and Total_Vol >= Charge_Update_Vol and Charge_FCC_Update_Flag == False):
+        Charge_Tape_Time += Time_Interval
+        if(Charge_Tape_Time >= Charge_Update_Time and RM_mAh <= Full_Charge_Capacity_mAh and Total_Vol >= Charge_Update_Vol and Charge_FCC_is_Updated == False):
             Used_Capacity_mAh = 0
             Full_Charge_Capacity_mAh = RM_mAh
             RM_percentage = 100
-            Charge_FCC_Update_Flag = True
+            Charge_FCC_is_Updated = True
             Charge_Tape_Time = 0
     Extra_Dsg_Cap = 0                                   ## Only update during discharging and rest
 
 def Calculation_Discharging():
-    global Current_mA, Rest_Time, Charge_Tape_Time, Rest_Time_for_Update, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_Update_Flag
+    global Current_mA, Rest_Time, Time_Interval, Charge_Tape_Time, Rest_Time_for_Update, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Charge_FCC_is_Updated
     Rest_Time = 0
     Rest_Time_for_Update = 0
     Charge_Tape_Time = 0
-    Discharged_Capacity_calculation += abs(Current_mA * 10/3600)
+    Discharged_Capacity_calculation += abs(Current_mA * Time_Interval/3600)
     Used_Capacity_mAh += Discharged_Capacity_calculation         ## UC update by discharge capacity
     Used_Capacity_mAh -= Charged_Capacity_calculation            ## UC update by charge capacity
     RM_mAh = Full_Charge_Capacity_mAh - Used_Capacity_mAh
@@ -149,14 +152,14 @@ def Calculation_Discharging():
     Charged_Capacity_calculation = 0
     Discharged_Capacity_calculation = 0
     if(RM_percentage <= 70):
-        Charge_FCC_Update_Flag = False
+        Charge_FCC_is_Updated = False
 
 def Calculation_Rest():
-    global Rest_Time, Rest_Time_for_Update, Charge_Tape_Time, Total_Vol, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Initialized_Flag
+    global Rest_Time, Rest_Time_for_Update, Time_Interval, Charge_Tape_Time, Total_Vol, RM_mAh, RM_percentage, Used_Capacity_mAh, Discharged_Capacity_calculation, Charged_Capacity_calculation, Full_Charge_Capacity_mAh, Extra_Dsg_Cap, Initialized_Flag
     Initialization()
     Charge_Tape_Time = 0                                                ## Need to be adjusted if it's not started in rest
-    Rest_Time += 10     
-    Rest_Time_for_Update += 10                                             ## count rest time
+    Rest_Time += Time_Interval
+    Rest_Time_for_Update += Time_Interval                                             ## count rest time
     ## Static Update
     if(Rest_Time_for_Update >= Static_Update_Time and Vol_is_Dynamic == False):
         Get_Static_OCV_Percentage()
@@ -230,22 +233,25 @@ for row in ws.rows:
         ws.cell(row=row_index, column=len(row)+14).value= 'RM_mAh'
         ws.cell(row=row_index, column=len(row)+15).value= 'RM_percentage'
         ws.cell(row=row_index, column=len(row)+16).value= 'Used_Capacity_mAh'
-        ws.cell(row=row_index, column=len(row)+17).value= 'Charge_FCC_Update_Flag'
+        ws.cell(row=row_index, column=len(row)+17).value= 'Charge_FCC_is_Updated'
         ws.cell(row=row_index, column=len(row)+18).value= 'Vol_is_Dynamic'
         row_index += 1
         continue
     Total_Vol = row[0].value * 1000
     Current_mA = row[1].value * 1000
-    C_mAh += Current_mA * -10 /3600
-    C_Wh += Current_mA/-1000 * Total_Vol/1000 * 10 /3600
+    Time_Interval = row[2].value
+    C_mAh += Current_mA * (-Time_Interval) /3600
+    C_Wh += Current_mA/-1000 * Total_Vol/1000 * Time_Interval /3600
+#### Current Status Check
+    Check_Current_Status()
+
 ## Average Voltage
     AverageVol()
-    if(abs(Total_Vol-avg_Vol) <= 50):
+    if(abs(Total_Vol-avg_Vol) <= 50 and CurrentInSTATIC == True):
         Vol_is_Dynamic = False
     else:
         Vol_is_Dynamic = True
-#### Current Status Check
-    Check_Current_Status()
+
 #### Capacity Calculaton
 ## Charging                        
     if(CurrentInCHG == True):
@@ -272,7 +278,7 @@ for row in ws.rows:
     ws.cell(row=row_index, column=len(row)+14).value= RM_mAh
     ws.cell(row=row_index, column=len(row)+15).value= RM_percentage
     ws.cell(row=row_index, column=len(row)+16).value= Used_Capacity_mAh
-    ws.cell(row=row_index, column=len(row)+17).value= Charge_FCC_Update_Flag
+    ws.cell(row=row_index, column=len(row)+17).value= Charge_FCC_is_Updated
     ws.cell(row=row_index, column=len(row)+18).value= Vol_is_Dynamic
 
     row_index += 1
