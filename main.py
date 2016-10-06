@@ -13,7 +13,7 @@ Current_Status =''
 
 #--- Constant Variables -----------------------------------------------
 Cell_Series = 10                        # number
-Cell_Parallel = 4                       # number
+Cell_Parallel = 1                       # number
 Cell_Capacity = 2600                    # mAh
 Design_Capacity = Cell_Parallel * Cell_Capacity
 Full_SOC = 100                          # %
@@ -23,8 +23,12 @@ Discharge_Current_Threshold = -190       # mA
 Charge_Current_Threshold = 100          # mA
 Charge_Update_Current_mA = 200          # mA
 Charge_Update_Time = 100                 # sec
-Static_Update_Time = 600               # sec
-Long_Static_Update_Time = 1500        # sec
+Static_Update_Time = 800               # sec
+Static_FCCUpdate_Percentage = 30        # %
+Long_Static_Update_Time = 1600        # sec
+avg_Vol_num = 5
+Dynamic_Voltage_Threshold = 50          # mV
+RM_percentage_display_buffer = 5        # %
 
 #--- Tracking & Initial Variables -------------------------------------
 
@@ -44,6 +48,8 @@ Rest_Time_for_Update = 0                        # sec
 Charge_Time = 0                                 # sec
 Charge_Tape_Time = 0                            # sec
 Discharge_Time = 0                              # sec
+RM_percentage_display_old = 0                   # %
+RM_percentage_display_middle = 0                   # %
 
 #Static_Update_Enable = False                   # False means can't update or just update; True means available to update.
 CurrentInCHG = False
@@ -75,13 +81,14 @@ def Normal_Capacity_Calculation():
     Charged_Capacity_calculation = 0
 
 def Initialization():
-    global Rest_Time, Rest_Time_for_Update, Initialized_Flag
+    global Rest_Time, Rest_Time_for_Update, Initialized_Flag, RM_percentage_display_old, RM_percentage_display_middle, RM_percentage_display, RM_percentage
     if((Rest_Time >= Long_Static_Update_Time and Vol_is_Dynamic == False) or Initialized_Flag == True):
         Get_Static_OCV_Percentage()
         Normal_Capacity_Calculation()
         Initialized_Flag = False
         Rest_Time_for_Update = 0
         Rest_Time = 0
+        RM_percentage_display_old = RM_percentage_display_middle = RM_percentage_display = RM_percentage
 
 def Check_Current_Status():
     global Current_mA, CurrentInCHG, CurrentInDSG, CurrentInSTATIC, Current_Status
@@ -162,9 +169,9 @@ def Calculation_Rest():
     Rest_Time_for_Update += Time_Interval                                             ## count rest time
     ## Static Update
     if(Rest_Time_for_Update >= Static_Update_Time and Vol_is_Dynamic == False):
-        Get_Static_OCV_Percentage()
-        Rest_Time_for_Update = 0
-        if(RM_percentage < 30):
+        if(RM_percentage < Static_FCCUpdate_Percentage):
+            Get_Static_OCV_Percentage()
+            Rest_Time_for_Update = 0
             Used_Capacity_mAh += Extra_Dsg_Cap
             Full_Charge_Capacity_mAh = ((Used_Capacity_mAh*100)/(100-RM_percentage))
             RM_mAh = Full_Charge_Capacity_mAh - Used_Capacity_mAh
@@ -191,8 +198,8 @@ def Calculation_Rest():
 
 def AverageVol():
     global vol_List, vol_List_index, j, avg_Vol
-    if vol_List_index >= 10 :
-        vol_List_index = 10
+    if vol_List_index >= avg_Vol_num :
+        vol_List_index = avg_Vol_num
     j = vol_List_index-1
     while j > 0 :
         vol_List[j] = vol_List[j-1]
@@ -200,6 +207,27 @@ def AverageVol():
     vol_List[0] = Total_Vol
     avg_Vol = sum(vol_List)/vol_List_index
     vol_List_index+=1
+
+def RM_Percentage_Display_Calculation():
+    global RM_percentage, RM_percentage_display
+    if(RM_percentage >= 100):
+        RM_percentage_display = 100
+    else:
+        RM_percentage_display = (100-(100-RM_percentage)*100/(100-RM_percentage_display_buffer))
+    if(RM_percentage_display <= 0):
+        RM_percentage_display = 0
+    return RM_percentage_display
+
+def RM_Percentage_Display_smooth():
+    global RM_percentage_display_old, RM_percentage_display_middle, RM_percentage_display
+    RM_percentage_display_old = RM_percentage_display_middle
+    RM_percentage_display_middle = RM_percentage_display
+    if((RM_percentage_display - RM_percentage_display_old) > 1.5):
+        RM_percentage_display = RM_percentage_display_old + 0.2
+        RM_percentage_display_middle = RM_percentage_display
+    elif((RM_percentage_display - RM_percentage_display_old) < -1.5):
+        RM_percentage_display = RM_percentage_display_old - 0.2
+        RM_percentage_display_middle = RM_percentage_display
 
 ###### Main Gauge Flow ######
 #### Reading Data
@@ -212,8 +240,9 @@ ws = wb.get_sheet_by_name ('sheet1')
 #### Input Data to Algorithm
 row_index = 1
 avg_Vol = 0
-vol_List = [0] * 10
+vol_List = [0] * avg_Vol_num
 vol_List_index = 1
+print ('Calculating......')
 
 for row in ws.rows:
     if row_index == 1 :
@@ -232,9 +261,10 @@ for row in ws.rows:
         ws.cell(row=row_index, column=len(row)+13).value= 'Full_Charge_Capacity_mAh'
         ws.cell(row=row_index, column=len(row)+14).value= 'RM_mAh'
         ws.cell(row=row_index, column=len(row)+15).value= 'RM_percentage'
-        ws.cell(row=row_index, column=len(row)+16).value= 'Used_Capacity_mAh'
-        ws.cell(row=row_index, column=len(row)+17).value= 'Charge_FCC_is_Updated'
-        ws.cell(row=row_index, column=len(row)+18).value= 'Vol_is_Dynamic'
+        ws.cell(row=row_index, column=len(row)+16).value= 'RM_percentage_display'
+        ws.cell(row=row_index, column=len(row)+17).value= 'Used_Capacity_mAh'
+        ws.cell(row=row_index, column=len(row)+18).value= 'Charge_FCC_is_Updated'
+        ws.cell(row=row_index, column=len(row)+19).value= 'Vol_is_Dynamic'
         row_index += 1
         continue
     Total_Vol = row[0].value * 1000
@@ -247,7 +277,7 @@ for row in ws.rows:
 
 ## Average Voltage
     AverageVol()
-    if(abs(Total_Vol-avg_Vol) <= 50 and CurrentInSTATIC == True):
+    if(abs(Total_Vol-avg_Vol) <= Dynamic_Voltage_Threshold and CurrentInSTATIC == True):
         Vol_is_Dynamic = False
     else:
         Vol_is_Dynamic = True
@@ -262,6 +292,11 @@ for row in ws.rows:
 ## Rest
     elif(CurrentInSTATIC == True):
         Calculation_Rest()
+
+## Display RM Percentage Calculation
+    RM_Percentage_Display_Calculation()
+    RM_Percentage_Display_smooth()
+   
     ws.cell(row=row_index, column=len(row)+1).value = C_mAh
     ws.cell(row=row_index, column=len(row)+2).value = C_Wh    
     ws.cell(row=row_index, column=len(row)+3).value = Total_Vol
@@ -277,12 +312,13 @@ for row in ws.rows:
     ws.cell(row=row_index, column=len(row)+13).value= Full_Charge_Capacity_mAh
     ws.cell(row=row_index, column=len(row)+14).value= RM_mAh
     ws.cell(row=row_index, column=len(row)+15).value= RM_percentage
-    ws.cell(row=row_index, column=len(row)+16).value= Used_Capacity_mAh
-    ws.cell(row=row_index, column=len(row)+17).value= Charge_FCC_is_Updated
-    ws.cell(row=row_index, column=len(row)+18).value= Vol_is_Dynamic
+    ws.cell(row=row_index, column=len(row)+16).value= RM_percentage_display
+    ws.cell(row=row_index, column=len(row)+17).value= Used_Capacity_mAh
+    ws.cell(row=row_index, column=len(row)+18).value= Charge_FCC_is_Updated
+    ws.cell(row=row_index, column=len(row)+19).value= Vol_is_Dynamic
 
     row_index += 1
 
 #### Save data
-print ('Calculation Finished !')
 wb.save(filename = 'new_rest+discharge.xlsx')
+print ('Calculation Finished !')
